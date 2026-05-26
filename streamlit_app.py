@@ -73,7 +73,8 @@ bg_css = "url('https://cdn.corenexis.com/files/c/2513965720.png')"
 def load_ai_models():
     """
     Load 4 artifacts:
-    - knn_model.pkl   : NearestNeighbors, fit trên [Price_Scaled, Rating_Scaled, Category_Scaled]
+    - knn_model.pkl   : BUNDLE dict {knn_model, ohe_cat, ohe_mfr, X_books, W_CATEGORY, W_MANUFACTURER}
+                       (KNN fit trên One-Hot Category + Manufacturer, có weighted)
     - rf_model.pkl    : RandomForestClassifier, fit trên [TheLoai_Encoded]
     - le_the_loai.pkl : LabelEncoder cho 6 nhóm thể loại sách (từ khảo sát)
     - le_phu_kien.pkl : LabelEncoder cho 5 loại phụ kiện
@@ -81,7 +82,7 @@ def load_ai_models():
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         with open(os.path.join(current_dir, "knn_model.pkl"), "rb") as f:
-            knn_model = pickle.load(f)
+            knn_model = pickle.load(f)   # ← thực ra là bundle dict, không phải KNN object trực tiếp
         with open(os.path.join(current_dir, "rf_model.pkl"), "rb") as f:
             rf_model = pickle.load(f)
         with open(os.path.join(current_dir, "le_the_loai.pkl"), "rb") as f:
@@ -162,32 +163,42 @@ def get_fallback_mapped_category(book_df, le_the_loai):
 
 def module1_knn_books(last_book_row, book_df, knn_model, k_pick=2):
     """
-    MODULE 1 - KNN: Lấy k_pick (=2) cuốn sách gần nhất với cuốn user vừa add.
-    Giữ thứ tự distance ascending (cuốn gần nhất TRƯỚC).
-    Loại trừ chính cuốn input.
+    MODULE 1 - KNN: Lấy k_pick (=2) cuốn sách phù hợp nhất với cuốn user vừa add.
+    - Bước 1: KNN tìm K=10 ứng viên gần nhất theo One-Hot (Category + Manufacturer)
+    - Bước 2: Loại chính cuốn input, sort theo |giá - giá_hiện_tại| tăng dần
+    - Bước 3: Lấy k_pick cuốn đầu (giá gần nhất)
     """
     pid_input = str(last_book_row['product_id'])
 
-    # Lấy positional index của cuốn input trong book_df (book_df đã reset_index drop=True khi train)
     matched = book_df[book_df['product_id'].astype(str) == pid_input]
     if matched.empty:
         return []
     label = matched.index[0]
 
-    X = book_df[['Price_Scaled', 'Rating_Scaled', 'Category_Scaled']]
-    feature = X.iloc[[label]].values  # giữ shape (1, 3)
+    # knn_model giờ là BUNDLE dict — extract object và ma trận features
+    knn_obj = knn_model['knn_model']
+    X_books = knn_model['X_books']
+    current_price = last_book_row.get('current_price', 0)
 
-    distances, indices = knn_model.kneighbors(feature)
+    # Lấy vector cuốn đang xem (giữ shape 2D cho kneighbors)
+    feature = X_books[label:label+1]
+    distances, indices = knn_obj.kneighbors(feature)
 
-    suggested = []
+    # Thu thập ứng viên + tính độ lệch giá
+    ung_vien = []
     for i in indices[0]:
         sid = str(book_df.iloc[i]['product_id'])
         if sid == pid_input:
             continue
-        suggested.append(book_df.iloc[i].to_dict())
-        if len(suggested) >= k_pick:
-            break
-    return suggested
+        price = book_df.iloc[i].get('current_price', 0)
+        price_diff = abs(price - current_price)
+        ung_vien.append((price_diff, book_df.iloc[i].to_dict()))
+
+    # Sort theo độ lệch giá tăng dần
+    ung_vien.sort(key=lambda x: x[0])
+
+    # Trả về top k_pick (giá gần nhất ưu tiên)
+    return [item[1] for item in ung_vien[:k_pick]]
 
 def module2_rf_top3_categories(last_book_row, book_df, rf_model, le_the_loai, le_phu_kien, top_k=3):
     """
