@@ -15,7 +15,6 @@ import random
 # ==============================================================================
 st.set_page_config(layout="wide", page_title="AI Hybrid Cross-selling Tiki", page_icon="📘")
 
-# Bạn dán link ảnh nền muốn thay vào đây
 BACKGROUND_URL = "https://cdn.corenexis.com/files/c/7785826720.png"
 
 st.markdown("""
@@ -74,15 +73,23 @@ def load_ai_models():
     """
     Load 4 artifacts:
     - knn_model.pkl   : BUNDLE dict {knn_model, ohe_cat, ohe_mfr, X_books, W_CATEGORY, W_MANUFACTURER}
-                       (KNN fit trên One-Hot Category + Manufacturer, có weighted)
-    - rf_model.pkl    : RandomForestClassifier, fit trên [TheLoai_Encoded]
-    - le_the_loai.pkl : LabelEncoder cho 6 nhóm thể loại sách (từ khảo sát)
+    - rf_model.pkl    : RandomForestClassifier
+    - le_the_loai.pkl : LabelEncoder cho 6 nhóm thể loại sách
     - le_phu_kien.pkl : LabelEncoder cho 5 loại phụ kiện
     """
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         with open(os.path.join(current_dir, "knn_model.pkl"), "rb") as f:
-            knn_model = pickle.load(f)   # ← thực ra là bundle dict, không phải KNN object trực tiếp
+            knn_model = pickle.load(f)
+
+        # ── Guard: ensure pkl is the new bundle dict, not a bare NearestNeighbors ──
+        if not isinstance(knn_model, dict) or 'knn_model' not in knn_model or 'X_books' not in knn_model:
+            raise ValueError(
+                "knn_model.pkl is the OLD format (plain NearestNeighbors). "
+                "Please replace it with the new BUNDLE dict that includes keys: "
+                "knn_model, X_books, ohe_cat, ohe_mfr, W_CATEGORY, W_MANUFACTURER."
+            )
+
         with open(os.path.join(current_dir, "rf_model.pkl"), "rb") as f:
             rf_model = pickle.load(f)
         with open(os.path.join(current_dir, "le_the_loai.pkl"), "rb") as f:
@@ -97,7 +104,7 @@ def load_ai_models():
 @st.cache_data
 def load_datasets():
     try:
-        book_df = pd.read_csv("book_data_clean.csv")
+        book_df = pd.read_csv("book_data_clean (3).csv")
         acc_df = pd.read_csv("phu_kien_clean.csv")
         return book_df, acc_df
     except Exception as e:
@@ -185,20 +192,25 @@ def module1_knn_books(last_book_row, book_df, knn_model, k_pick=2):
     distances, indices = knn_obj.kneighbors(feature)
 
     # Thu thập ứng viên + tính độ lệch giá
+# Thu thập ứng viên + tính độ lệch giá
     ung_vien = []
     for i in indices[0]:
         sid = str(book_df.iloc[i]['product_id'])
         if sid == pid_input:
             continue
+        title = book_df.iloc[i].get('title', '') # Lấy thêm tên sách
         price = book_df.iloc[i].get('current_price', 0)
         price_diff = abs(price - current_price)
-        ung_vien.append((price_diff, book_df.iloc[i].to_dict()))
+        
+        # Append cấu trúc 3 phần tử: (độ lệch giá, tên sách, toàn bộ dict data)
+        ung_vien.append((price_diff, title, book_df.iloc[i].to_dict()))
 
-    # Sort theo độ lệch giá tăng dần
-    ung_vien.sort(key=lambda x: x[0])
+    # Sort ưu tiên 1: Độ lệch giá (x[0]) tăng dần
+    # Sort ưu tiên 2: Tên sách (x[1]) theo bảng chữ cái A-Z (giống hệt Colab)
+    ung_vien.sort(key=lambda x: (x[0], x[1]))
 
-    # Trả về top k_pick (giá gần nhất ưu tiên)
-    return [item[1] for item in ung_vien[:k_pick]]
+    # Trả về top k_pick (chỉ lấy phần tử data là x[2])
+    return [item[2] for item in ung_vien[:k_pick]]
 
 def module2_rf_top3_categories(last_book_row, book_df, rf_model, le_the_loai, le_phu_kien, top_k=3):
     """
@@ -438,8 +450,10 @@ if st.session_state.recommendations:
                     st.markdown(f"""
                     **Sách {i+1}:** {b.get('product_id')} - {b.get('title')}
                     - Tác giả: {b.get('authors', 'N/A')}
+                    - Nhà xuất bản: {b.get('manufacturer', 'N/A')}
                     - Thể loại: {b.get('category', 'N/A')}
                     - Nhóm: {b.get('mapped_category', 'N/A')}
+                    - Giá tiền: {int(b.get('current_price', 0)):,} đ
                     """)
             st.markdown("---")
             # ----------------------------------------------------
