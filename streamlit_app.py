@@ -35,16 +35,7 @@ st.markdown("""
         display: none !important;
     }
     
-    .stApp > * { position: relative; z-index: 1; }
-    
-    /* Khung trắng chứa bảng điều khiển admin cột trái */
-    div[data-testid="column"]:first-child > div[data-testid="stVerticalBlock"] {
-        background: rgba(255,255,255,0.97);
-        border-radius: 20px;
-        padding: 24px 20px 20px 20px;
-        box-shadow: 0 8px 40px rgba(0,60,150,0.22);
-        border: 1.5px solid rgba(255,255,255,0.7);
-    }
+    .stApp > * { position: relative; z-index: 1; }   
     
     /* Các class CSS giữ nguyên cấu trúc hiển thị sách gốc của bạn */
     .book-card {
