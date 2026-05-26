@@ -52,7 +52,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 3. HÀM CHUYỂN ĐỔI ẢNH NỀN GIAO DIỆN SANG BASE64
+# 3. GẮN LINK ẢNH URL GIAO DIỆN
 # ==============================================================================
 bg_css = "url('https://cdn.corenexis.com/files/c/2513965720.png')"
 
