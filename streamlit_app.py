@@ -104,7 +104,7 @@ def load_ai_models():
 @st.cache_data
 def load_datasets():
     try:
-        book_df = pd.read_csv("book_data_clean (3).csv")
+        book_df = pd.read_csv("book_data_clean.csv")
         acc_df = pd.read_csv("phu_kien_clean.csv")
         return book_df, acc_df
     except Exception as e:
