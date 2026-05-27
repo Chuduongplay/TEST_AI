@@ -239,9 +239,9 @@ def pick_one_acc_per_category(acc_df, categories, gap, ratio=PRICE_RANGE_RATIO):
     """
     Cho mỗi thể loại trong `categories`, chọn 1 sản phẩm:
     - Nếu gap > 0: filter giá nằm trong [gap, gap*(1+ratio)] -> rẻ nhất trong khoảng.
-      Không có sản phẩm trong khoảng -> rẻ nhất của thể loại đó.
+      + Fallback 1: Không có trong khoảng -> chọn món rẻ nhất nhưng >= gap (đảm bảo qua mốc ưu đãi).
+      + Fallback 2: Không có món nào >= gap -> chọn món đắt nhất của thể loại đó để rút ngắn gap nhất có thể.
     - Nếu gap == 0 (max tier): rẻ nhất của thể loại đó.
-    Trả về list candidates (1 per category, có thể < len(categories) nếu thể loại không tồn tại).
     """
     candidates = []
     for cat in categories:
@@ -252,10 +252,18 @@ def pick_one_acc_per_category(acc_df, categories, gap, ratio=PRICE_RANGE_RATIO):
         if gap > 0:
             lo, hi = gap, gap * (1 + ratio)
             in_range = pool[(pool['current_price'] >= lo) & (pool['current_price'] <= hi)]
+            
             if not in_range.empty:
                 pick = in_range.sort_values('current_price', ascending=True).iloc[0]
             else:
-                pick = pool.sort_values('current_price', ascending=True).iloc[0]
+                # BẢN VÁ LỖI TẠI ĐÂY
+                # Fallback 1: Tìm món rẻ nhất nhưng đủ sức bù gap
+                above_gap = pool[pool['current_price'] >= gap]
+                if not above_gap.empty:
+                    pick = above_gap.sort_values('current_price', ascending=True).iloc[0]
+                else:
+                    # Fallback 2: Không có món nào đủ to, lấy món to nhất có thể
+                    pick = pool.sort_values('current_price', ascending=False).iloc[0]
         else:
             pick = pool.sort_values('current_price', ascending=True).iloc[0]
 
